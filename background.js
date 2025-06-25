@@ -69,9 +69,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 break;            case 'minimize_window':
                 handleMinimizeWindow(sendResponse);
                 break;
-            case 'fetch_resource_data':
-                handleFetchResourceData(request.url, sendResponse);
-                break;
             default:
                 sendResponse({ error: 'Unknown message type' });
         }
@@ -398,53 +395,3 @@ chrome.windows.onRemoved.addListener((windowId) => {
         }
     }
 });
-
-// 获取资源数据
-async function handleFetchResourceData(url, sendResponse) {
-    try {
-        console.log('Fetching resource data for:', url);
-        
-        // 使用fetch API获取资源数据
-        const response = await fetch(url);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        // 获取内容类型
-        const contentType = response.headers.get('content-type') || 'application/octet-stream';
-        
-        // 根据内容类型决定如何处理数据
-        let data;
-        if (contentType.startsWith('text/') || 
-            contentType.includes('javascript') ||
-            contentType.includes('json') ||
-            contentType.includes('xml')) {
-            // 文本类型数据
-            data = await response.text();
-        } else {
-            // 二进制数据，转换为base64
-            const arrayBuffer = await response.arrayBuffer();
-            const uint8Array = new Uint8Array(arrayBuffer);
-            data = btoa(String.fromCharCode(...uint8Array));
-        }
-        
-        sendResponse({
-            success: true,
-            data: data,
-            contentType: contentType,
-            size: response.headers.get('content-length') || data.length,
-            isBinary: !contentType.startsWith('text/') && 
-                     !contentType.includes('javascript') &&
-                     !contentType.includes('json') &&
-                     !contentType.includes('xml')
-        });
-        
-    } catch (error) {
-        console.error('Failed to fetch resource data:', error);
-        sendResponse({
-            success: false,
-            error: error.message
-        });
-    }
-}

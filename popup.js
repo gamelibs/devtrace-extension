@@ -8,6 +8,7 @@ class WebRequestCaptureApp {    constructor() {
         this.filteredData = [];
         this.isCapturing = false;
         this.downloadStatus = new Map(); // 添加下载状态追踪
+        this.excludedResources = new Set(); // 追踪被排除的资源
         this.settings = {
             maxRequests: 100,
             saveDetails: false,
@@ -58,6 +59,14 @@ class WebRequestCaptureApp {    constructor() {
         document.getElementById('statusFilter').addEventListener('change', (e) => this.updateFilter('status', e.target.value));
         document.getElementById('typeFilter').addEventListener('change', (e) => this.updateFilter('type', e.target.value));
         document.getElementById('clearFilters').addEventListener('click', () => this.clearFilters());
+        
+        // 资源选择复选框事件监听器
+        document.getElementById('selectAllCheckbox').addEventListener('change', (e) => this.toggleSelectAll(e.target.checked));
+        document.addEventListener('change', (e) => {
+            if (e.target.classList.contains('resource-checkbox')) {
+                this.toggleResourceSelection(e.target);
+            }
+        });
         
         // 设置面板
         document.getElementById('settingsButton').addEventListener('click', () => this.toggleSettings());
@@ -309,7 +318,7 @@ class WebRequestCaptureApp {    constructor() {
           if (this.filteredData.length === 0) {
             tableBody.innerHTML = `
                 <tr>
-                    <td colspan="10" class="empty-state">
+                    <td colspan="11" class="empty-state">
                         <div class="empty-state-icon">${this.currentData.length === 0 ? '📊' : '🔍'}</div>
                         <div>${this.currentData.length === 0 ? 'No requests captured yet' : 'No requests match current filters'}</div>
                     </td>
@@ -345,8 +354,13 @@ class WebRequestCaptureApp {    constructor() {
                 downloadStatusHtml = '<span class="download-status excluded">➖ Excluded</span>';
                 actionButtonHtml = '<button class="save-btn" disabled>N/A</button>';
             }
-              return `
-                <tr data-index="${index}">
+              const isExcluded = this.excludedResources?.has(request.url) || false;
+            const checkboxChecked = !isExcluded ? 'checked' : '';
+            const rowClass = isExcluded ? 'row-excluded' : '';
+            
+            return `
+                <tr data-index="${index}" class="${rowClass}">
+                    <td><input type="checkbox" class="resource-checkbox" data-url="${encodeURIComponent(request.url)}" ${checkboxChecked}></td>
                     <td>${index + 1}</td>
                     <td>${time}</td>
                     <td><span class="method-badge ${methodClass}">${request.method}</span></td>
@@ -364,6 +378,9 @@ class WebRequestCaptureApp {    constructor() {
         tableBody.innerHTML = rows;
           // 添加保存按钮的事件监听器
         this.addSaveButtonListeners();
+        
+        // 更新全选复选框状态
+        this.updateSelectAllCheckbox();
     }
 
     /**
@@ -420,12 +437,11 @@ class WebRequestCaptureApp {    constructor() {
         const exportResourcesBtn = document.getElementById('exportResourcesButton');
         if (!exportResourcesBtn) return;
 
-        const downloadableCount = this.filteredData.filter(request => {
-            return this.isDownloadableResource(request);
-        }).length;
+        // 使用选中的可下载资源数量
+        const selectedDownloadableCount = this.getSelectedResourcesCount();
 
-        if (downloadableCount > 0) {
-            exportResourcesBtn.textContent = `Export Resources (${downloadableCount})`;
+        if (selectedDownloadableCount > 0) {
+            exportResourcesBtn.textContent = `Export Resources (${selectedDownloadableCount})`;
             exportResourcesBtn.disabled = false;
         } else {
             exportResourcesBtn.textContent = 'Export Resources (0)';
@@ -537,6 +553,8 @@ class WebRequestCaptureApp {    constructor() {
         }
     }    /**
      * 导出数据
+     */    /**
+     * 导出数据（简化为URL数组格式）
      */
     exportData() {
         if (this.filteredData.length === 0) {
@@ -544,14 +562,18 @@ class WebRequestCaptureApp {    constructor() {
             return;
         }
 
-        const exportData = {
-            timestamp: new Date().toISOString(),
-            totalRequests: this.filteredData.length,
-            filters: this.filters,
-            requests: this.filteredData
-        };
+        // 使用资源检查功能过滤，只导出选中的可下载资源URL
+        const selectedDownloadableUrls = this.filteredData
+            .filter(request => this.isDownloadableResource(request) && !this.excludedResources.has(request.url))
+            .map(request => request.url);
 
-        const dataStr = JSON.stringify(exportData, null, 2);
+        if (selectedDownloadableUrls.length === 0) {
+            this.showError('No selected downloadable resources found to export');
+            return;
+        }
+
+        // 创建简化的JSON数据（仅包含URL数组）
+        const dataStr = JSON.stringify(selectedDownloadableUrls, null, 2);
         const blob = new Blob([dataStr], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
 
@@ -563,7 +585,7 @@ class WebRequestCaptureApp {    constructor() {
         const timeStr = String(now.getHours()).padStart(2, '0') + 
                        String(now.getMinutes()).padStart(2, '0') + 
                        String(now.getSeconds()).padStart(2, '0');
-        const filename = `web_requests_${dateStr}_${timeStr}.json`;
+        const filename = `resource_urls_${dateStr}_${timeStr}.json`;
         
         chrome.downloads.download({
             url: url,
@@ -573,10 +595,11 @@ class WebRequestCaptureApp {    constructor() {
             if (chrome.runtime.lastError) {
                 this.showError('Export failed: ' + chrome.runtime.lastError.message);
             } else {
-                this.showSuccess(`Exported ${this.filteredData.length} requests to ${filename}`);
+                this.showSuccess(`Exported ${selectedDownloadableUrls.length} selected resource URLs to ${filename}`);
             }
             URL.revokeObjectURL(url);
-        });    }    /**
+        });
+    }/**
      * 保存单个资源
      */
     async saveIndividualResource(url, index) {
@@ -597,16 +620,16 @@ class WebRequestCaptureApp {    constructor() {
             
             // 第二步：打开文件夹选择器
             console.log('Opening folder picker for resource:', resource.url);
-            
-            if (window.showDirectoryPicker) {
+              if (window.showDirectoryPicker) {
+                // 先显示说明
+                this.showToast('📁 Note: Due to browser security, some files may be saved to Downloads folder with organized structure', 'info');
+                
                 const directoryHandle = await window.showDirectoryPicker({
                     mode: 'readwrite'
                 });
                   console.log('User selected folder:', directoryHandle.name);
-                this.showToast(`Selected folder: ${directoryHandle.name}`, 'success');
-                
-                // 第三步：按域名+路径创建目录结构并保存文件
-                await this.createDirectoryStructureAndSaveFile(resource, directoryHandle, index);
+                this.showToast(`Selected folder: ${directoryHandle.name}`, 'success');                // 第三步：保存资源（智能选择方案）
+                await this.saveResourceSmart(resource, directoryHandle, index);
             } else {
                 this.showToast('Your browser does not support folder picker', 'error');
             }        } catch (error) {
@@ -617,65 +640,34 @@ class WebRequestCaptureApp {    constructor() {
             } else {
                 console.error('Save individual resource failed:', error);
                 this.showToast('Failed to save resource: ' + error.message, 'error');
-            }        }
-    }
+            }        }    }
 
     /**
-     * 获取资源数据
+     * 智能保存资源（尝试直接保存，失败则降级到Downloads）
      */
-    async fetchResourceData(url) {
-        return new Promise((resolve, reject) => {
-            chrome.runtime.sendMessage({
-                message: 'fetch_resource_data',
-                url: url
-            }, (response) => {
-                if (chrome.runtime.lastError) {
-                    reject(new Error(chrome.runtime.lastError.message));
-                } else if (response.success) {
-                    resolve(response);
-                } else {
-                    reject(new Error(response.error || 'Failed to fetch resource data'));
-                }
-            });
-        });
-    }
-
-    /**
-     * 更新资源状态
-     */
-    updateResourceStatus(index, status) {
-        const statusCell = document.querySelector(`tr[data-index="${index}"] .download-status`);
-        if (statusCell) {
-            statusCell.textContent = this.getStatusText(status);
-            statusCell.className = `download-status status-${status}`;
+    async saveResourceSmart(resource, directoryHandle, index) {
+        try {
+            // 先尝试直接保存到用户选择的目录
+            await this.saveResourceToUserDirectory(resource, directoryHandle, index);
+        } catch (error) {
+            console.log('Direct save failed, falling back to Downloads API:', error.message);
+            // 降级到Downloads API
+            this.showToast('⚠️ Using Downloads folder due to browser restrictions...', 'warning');
+            await this.saveResourceWithDownloadsAPI(resource, directoryHandle.name, index);
         }
     }
 
     /**
-     * 获取状态文本
+     * 保存资源到用户选择的目录
      */
-    getStatusText(status) {
-        const statusTexts = {
-            'ready': 'Ready',
-            'downloading': 'Downloading...',
-            'downloaded': 'Downloaded',
-            'failed': 'Failed',
-            'excluded': 'N/A'
-        };
-        return statusTexts[status] || status;
-    }
-
-    /**
-     * 按域名+路径创建目录结构并保存文件
-     */
-    async createDirectoryStructureAndSaveFile(resource, directoryHandle, index) {
+    async saveResourceToUserDirectory(resource, directoryHandle, index) {
         try {
             // 解析URL获取域名和路径
             const url = new URL(resource.url);
             const domain = url.hostname;
             const pathname = url.pathname;
             
-            console.log('Creating directory structure and saving file for:');
+            console.log('Saving resource to user directory:');
             console.log('  Domain:', domain);
             console.log('  Path:', pathname);
             
@@ -712,32 +704,28 @@ class WebRequestCaptureApp {    constructor() {
                         }
                     }
                 }
-            }
-            
-            // 获取资源数据
+            }            // 获取资源数据
             console.log('  📥 Fetching resource data...');
-            const resourceData = await this.fetchResourceData(resource.url);
+            
+            // 尝试直接fetch
+            let blob;
+            const response = await fetch(resource.url);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            blob = await response.blob();
               // 生成文件名
             const filename = this.generateFilename(resource, index + 1);
             console.log('  📝 Generated filename:', filename);
+            
+            // 获取文件数据
+            console.log('  📥 Getting file data...');
             
             // 创建文件并写入数据
             const fileHandle = await currentHandle.getFileHandle(filename, { create: true });
             const writable = await fileHandle.createWritable();
             
-            if (resourceData.isBinary) {
-                // 处理二进制数据
-                const binaryString = atob(resourceData.data);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
-                }
-                await writable.write(bytes);
-            } else {
-                // 处理文本数据
-                await writable.write(resourceData.data);
-            }
-            
+            await writable.write(blob);
             await writable.close();
             
             // 更新状态为已下载
@@ -746,16 +734,118 @@ class WebRequestCaptureApp {    constructor() {
             // 显示成功信息
             const directoryPath = [domain, ...pathSegments.slice(0, -1)].filter(p => p).join('/');
             this.showToast(`✅ File saved: ${directoryPath}/${filename}`, 'success');
+              } catch (error) {
+            console.error('Failed to save resource to user directory:', error);
+            this.updateResourceStatus(index, 'failed');
+            // 重新抛出错误，让上级方法处理降级
+            throw error;
+        }
+    }    /**
+     * 使用Chrome Downloads API保存单个资源（降级方案）
+     */
+    async saveResourceWithDownloadsAPI(resource, folderName, index) {
+        try {
+            // 解析URL获取域名和路径
+            const url = new URL(resource.url);
+            const domain = url.hostname;
+            const pathname = url.pathname;
+            
+            // 生成目录路径
+            const pathSegments = pathname.split('/').filter(segment => segment !== '');
+            const directorySegments = pathSegments.slice(0, -1); // 去掉文件名部分
+            
+            let directoryPath = domain;
+            if (directorySegments.length > 0) {
+                directoryPath += '/' + directorySegments.join('/');
+            }
+            
+            // 生成文件名
+            const filename = this.generateFilename(resource, index + 1);
+            
+            // 生成完整的下载路径（直接使用用户选择的文件夹名，不添加时间戳）
+            const fullPath = `${folderName}/${directoryPath}/${filename}`;
+            
+            console.log('Downloading resource to:', fullPath);
+            
+            // 使用Chrome Downloads API下载
+            await new Promise((resolve, reject) => {
+                chrome.downloads.download({
+                    url: resource.url,
+                    filename: fullPath,
+                    saveAs: false
+                }, (downloadId) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('Download failed:', chrome.runtime.lastError.message);
+                        this.updateResourceStatus(index, 'failed');
+                        reject(new Error(chrome.runtime.lastError.message));
+                    } else {
+                        console.log('Download started:', filename);
+                        
+                        // 监听下载完成
+                        const onDownloadChanged = (downloadDelta) => {
+                            if (downloadDelta.id === downloadId && downloadDelta.state) {
+                                if (downloadDelta.state.current === 'complete') {
+                                    chrome.downloads.onChanged.removeListener(onDownloadChanged);
+                                    this.updateResourceStatus(index, 'downloaded');
+                                    console.log('Download completed:', filename);
+                                    resolve(downloadId);
+                                } else if (downloadDelta.state.current === 'interrupted') {
+                                    chrome.downloads.onChanged.removeListener(onDownloadChanged);
+                                    this.updateResourceStatus(index, 'failed');
+                                    reject(new Error('Download was interrupted'));
+                                }
+                            }
+                        };
+                        
+                        chrome.downloads.onChanged.addListener(onDownloadChanged);
+                        
+                        // 设置超时
+                        setTimeout(() => {
+                            chrome.downloads.onChanged.removeListener(onDownloadChanged);
+                            this.updateResourceStatus(index, 'failed');
+                            reject(new Error('Download timeout'));
+                        }, 30000); // 30秒超时
+                    }
+                });
+            });
+            
+            // 显示成功信息
+            this.showToast(`✅ File saved: Downloads/${fullPath}`, 'success');
             
         } catch (error) {
-            console.error('Failed to create directory structure and save file:', error);
+            console.error('Failed to save resource:', error);
             this.updateResourceStatus(index, 'failed');
             this.showToast('❌ Failed to save file: ' + error.message, 'error');
         }
     }
 
     /**
-     * 按域名+路径创建目录结构（原方法，保留用于批量导出）
+     * 更新资源状态
+     */
+    updateResourceStatus(index, status) {
+        const statusCell = document.querySelector(`tr[data-index="${index}"] .download-status`);
+        if (statusCell) {
+            statusCell.textContent = this.getStatusText(status);
+            statusCell.className = `download-status status-${status}`;
+        }
+    }
+
+    /**
+     * 获取状态文本
+     */
+    getStatusText(status) {
+        const statusTexts = {
+            'ready': 'Ready',
+            'downloading': 'Downloading...',
+            'downloaded': 'Downloaded',
+            'failed': 'Failed',
+            'excluded': 'N/A'
+        };
+        return statusTexts[status] || status;
+    }
+
+    /**
+     * 按域名+路径创建目录结构（保留用于批量导出）
      */
     async createDirectoryStructure(resource, directoryHandle) {
         try {
@@ -811,50 +901,80 @@ class WebRequestCaptureApp {    constructor() {
             console.error('Failed to create directory structure:', error);
             this.showToast('❌ Failed to create directory structure: ' + error.message, 'error');
         }
-    }/**
-     * 导出资源文件
+    }    /**
+     * 导出资源文件 - 直接批量保存到Downloads目录
      */
     async exportResources() {
-        const resources = this.filteredData.filter(request => 
-            this.isDownloadableResource(request)
-        );
+        // 只导出选中的可下载资源
+        const resources = this.getSelectedDownloadableResources();
 
         if (resources.length === 0) {
-            this.showToast('No downloadable resources found', 'warning');
+            this.showToast('No selected downloadable resources found', 'warning');
             return;
         }
 
-        // 按类型分类资源
-        const categorizedResources = this.categorizeResources(resources);
+        // 生成时间戳用于文件夹名
+        const now = new Date();
+        const timestamp = now.getFullYear() + 
+                         String(now.getMonth() + 1).padStart(2, '0') + 
+                         String(now.getDate()).padStart(2, '0') + '_' +
+                         String(now.getHours()).padStart(2, '0') + 
+                         String(now.getMinutes()).padStart(2, '0') + 
+                         String(now.getSeconds()).padStart(2, '0');
+
+        const exportFolderName = `WebRequestCapture_${timestamp}`;
         
-        // 检查是否支持文件夹选择器
-        const supportsFolderPicker = 'showDirectoryPicker' in window;
+        this.showToast(`🚀 Starting batch export of ${resources.length} resources using Chrome Downloads API to Downloads/${exportFolderName}/`, 'info');
         
-        if (supportsFolderPicker) {
-            // 直接尝试使用文件夹选择器
+        // 重置所有资源的下载状态
+        resources.forEach((resource, index) => {
+            const originalIndex = this.filteredData.findIndex(r => r.url === resource.url);
+            if (originalIndex !== -1) {
+                this.updateResourceStatus(originalIndex, 'downloading');
+            }
+        });
+        
+        let downloaded = 0;
+        let failed = 0;        // 批量下载所有资源，直接使用Chrome Downloads API
+        for (let i = 0; i < resources.length; i++) {
+            const resource = resources[i];
+            const originalIndex = this.filteredData.findIndex(r => r.url === resource.url);
+            
             try {
-                await this.exportResourcesWithFolderPicker(resources, categorizedResources);
-                return;
-            } catch (error) {
-                if (error.name === 'AbortError') {
-                    // 用户取消了文件夹选择，使用默认Downloads文件夹
-                    console.log('User cancelled folder selection, using default Downloads folder');
-                } else {
-                    console.error('Folder picker failed:', error);
-                    this.showToast('Folder selection failed, using default Downloads folder', 'warning');
+                // 直接使用Chrome Downloads API批量保存
+                await this.saveResourceWithChromeDownloads(resource, exportFolderName, originalIndex, i + 1);
+                downloaded++;
+                
+                if (originalIndex !== -1) {
+                    this.updateResourceStatus(originalIndex, 'downloaded');
                 }
-                // 如果文件夹选择失败或取消，继续使用默认方式
+            } catch (error) {
+                console.error('Failed to download resource:', resource.url, error);
+                failed++;
+                
+                if (originalIndex !== -1) {
+                    this.updateResourceStatus(originalIndex, 'failed');
+                }
+            }
+            
+            // 添加延迟避免过快请求
+            if (i < resources.length - 1) {
+                await this.sleep(100);
             }
         }
 
-        // 使用默认Downloads文件夹
-        try {
-            await this.exportResourcesDefault(resources, categorizedResources);
-        } catch (error) {
-            console.error('Export resources failed:', error);
-            this.showToast('Export failed: ' + error.message, 'error');
+        // 创建索引文件
+        await this.createBatchExportIndexFile(exportFolderName, resources);
+
+        // 显示最终结果
+        if (downloaded > 0) {
+            this.showToast(`✅ Batch export completed! ${downloaded} files saved to Downloads/${exportFolderName}/`, 'success');
+        }        if (failed > 0) {
+            this.showToast(`⚠️ ${failed} files failed to download due to server restrictions`, 'warning');
         }
-    }    /**
+    }
+
+    /**
      * 使用文件夹选择器导出资源
      */
     async exportResourcesWithFolderPicker(resources, categorizedResources) {        // 选择目标文件夹 - 仅用于确定文件夹名称
@@ -1279,6 +1399,60 @@ class WebRequestCaptureApp {    constructor() {
     }
 
     /**
+     * 创建批量导出的索引文件
+     */
+    async createBatchExportIndexFile(exportFolderName, resources) {
+        try {
+            const now = new Date();
+            const exportDate = now.toLocaleString();
+            
+            let indexContent = `Web Request Capture Pro - Batch Export\n`;
+            indexContent += `Export Date: ${exportDate}\n`;
+            indexContent += `Total Resources: ${resources.length}\n`;
+            indexContent += `\n========================================\n\n`;
+              resources.forEach((resource, index) => {
+                const url = new URL(resource.url);
+                const domain = url.hostname;
+                const path = url.pathname;
+                const filename = this.generateFilename(resource, index + 1);
+                
+                // 生成目录路径
+                const pathSegments = path.split('/').filter(segment => segment !== '');
+                const directorySegments = pathSegments.slice(0, -1);
+                let directoryPath = domain;
+                if (directorySegments.length > 0) {
+                    directoryPath += '/' + directorySegments.join('/');
+                }
+                
+                indexContent += `${index + 1}. ${filename}\n`;
+                indexContent += `   URL: ${resource.url}\n`;
+                indexContent += `   Directory: ${directoryPath}\n`;
+                indexContent += `   Type: ${resource.type || 'unknown'}\n`;
+                indexContent += `   Method: ${resource.method || 'GET'}\n`;
+                indexContent += `\n`;
+            });
+            
+            const indexBlob = new Blob([indexContent], { type: 'text/plain' });
+            const indexUrl = URL.createObjectURL(indexBlob);
+            
+            // 使用Chrome Downloads API保存索引文件
+            chrome.downloads.download({
+                url: indexUrl,
+                filename: `${exportFolderName}/export_index.txt`,
+                saveAs: false
+            }, (downloadId) => {
+                URL.revokeObjectURL(indexUrl);
+                if (chrome.runtime.lastError) {
+                    console.error('Failed to save index file:', chrome.runtime.lastError);
+                }
+            });
+            
+        } catch (error) {
+            console.error('Failed to create index file:', error);
+        }
+    }
+
+    /**
      * 延迟函数
      */
     sleep(ms) {
@@ -1505,7 +1679,97 @@ class WebRequestCaptureApp {    constructor() {
             if (!response || !response.success) {
                 console.log('Cannot minimize window');
             }
-        });
+        });    }
+
+    /**
+     * 使用Chrome Downloads API保存资源（批量保存专用）
+     */
+    async saveResourceWithChromeDownloads(resource, batchFolderName, index, fileNumber) {
+        try {
+            // 解析URL获取域名和路径
+            const url = new URL(resource.url);
+            const domain = url.hostname;
+            const pathname = url.pathname;
+            
+            // 生成目录路径
+            const pathSegments = pathname.split('/').filter(segment => segment !== '');
+            const directorySegments = pathSegments.slice(0, -1); // 去掉文件名部分
+            
+            let directoryPath = domain;
+            if (directorySegments.length > 0) {
+                directoryPath += '/' + directorySegments.join('/');
+            }
+            
+            // 生成文件名
+            const filename = this.generateFilename(resource, fileNumber);
+            
+            // 生成完整的下载路径（使用统一的批量文件夹名）
+            const fullPath = `${batchFolderName}/${directoryPath}/${filename}`;
+            
+            console.log('Batch downloading resource to:', fullPath);
+            
+            // 使用Chrome Downloads API下载
+            await new Promise((resolve, reject) => {
+                chrome.downloads.download({
+                    url: resource.url,
+                    filename: fullPath,
+                    saveAs: false
+                }, (downloadId) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('Batch download failed:', chrome.runtime.lastError.message);
+                        if (index !== -1) {
+                            this.updateResourceStatus(index, 'failed');
+                        }
+                        reject(new Error(chrome.runtime.lastError.message));
+                    } else {
+                        console.log('Batch download started:', filename);
+                        
+                        // 监听下载完成
+                        const onDownloadChanged = (downloadDelta) => {
+                            if (downloadDelta.id === downloadId && downloadDelta.state) {
+                                if (downloadDelta.state.current === 'complete') {
+                                    chrome.downloads.onChanged.removeListener(onDownloadChanged);
+                                    if (index !== -1) {
+                                        this.updateResourceStatus(index, 'downloaded');
+                                    }
+                                    console.log('Batch download completed:', filename);
+                                    resolve(downloadId);
+                                } else if (downloadDelta.state.current === 'interrupted') {
+                                    chrome.downloads.onChanged.removeListener(onDownloadChanged);
+                                    if (index !== -1) {
+                                        this.updateResourceStatus(index, 'failed');
+                                    }
+                                    reject(new Error('Download was interrupted'));
+                                }
+                            }
+                        };
+                        
+                        chrome.downloads.onChanged.addListener(onDownloadChanged);
+                        
+                        // 设置超时
+                        setTimeout(() => {
+                            chrome.downloads.onChanged.removeListener(onDownloadChanged);
+                            if (index !== -1) {
+                                this.updateResourceStatus(index, 'failed');
+                            }
+                            reject(new Error('Download timeout'));
+                        }, 30000); // 30秒超时
+                    }
+                });
+            });
+            
+            // 显示成功信息（只对前几个文件显示，避免信息过多）
+            if (fileNumber <= 3) {
+                this.showToast(`✅ File ${fileNumber} saved: ${filename}`, 'success');
+            }
+            
+        } catch (error) {
+            console.error('Failed to save resource with Chrome Downloads:', error);
+            if (index !== -1) {
+                this.updateResourceStatus(index, 'failed');
+            }
+            throw error;
+        }
     }
 
     /**
@@ -1552,7 +1816,90 @@ class WebRequestCaptureApp {    constructor() {
 
         document.addEventListener('mouseup', () => {
             isDragging = false;
+        });    }
+
+    /**
+     * 切换全选/取消全选
+     */
+    toggleSelectAll(checked) {
+        const checkboxes = document.querySelectorAll('.resource-checkbox');
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        
+        checkboxes.forEach(checkbox => {
+            const url = decodeURIComponent(checkbox.getAttribute('data-url'));
+            if (checked) {
+                this.excludedResources.delete(url);
+                checkbox.checked = true;
+            } else {
+                this.excludedResources.add(url);
+                checkbox.checked = false;
+            }
         });
+        
+        this.updateTable();
+        this.updateExportResourcesButton();
+        
+        // 显示操作提示
+        const selectedCount = this.getSelectedResourcesCount();
+        this.showToast(`${checked ? 'Selected' : 'Deselected'} all resources (${selectedCount} items)`, 'info');
+    }
+
+    /**
+     * 切换单个资源的选择状态
+     */
+    toggleResourceSelection(checkbox) {
+        const url = decodeURIComponent(checkbox.getAttribute('data-url'));
+        const row = checkbox.closest('tr');
+        
+        if (checkbox.checked) {
+            this.excludedResources.delete(url);
+            row.classList.remove('row-excluded');
+        } else {
+            this.excludedResources.add(url);
+            row.classList.add('row-excluded');
+        }
+        
+        // 更新全选复选框状态
+        this.updateSelectAllCheckbox();
+        this.updateExportResourcesButton();
+    }
+
+    /**
+     * 更新全选复选框的状态
+     */
+    updateSelectAllCheckbox() {
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        const checkboxes = document.querySelectorAll('.resource-checkbox');
+        const checkedCount = document.querySelectorAll('.resource-checkbox:checked').length;
+        
+        if (checkedCount === 0) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+        } else if (checkedCount === checkboxes.length) {
+            selectAllCheckbox.checked = true;
+            selectAllCheckbox.indeterminate = false;
+        } else {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = true;
+        }
+    }
+
+    /**
+     * 获取选中的资源数量
+     */
+    getSelectedResourcesCount() {
+        return this.filteredData.filter(request => 
+            this.isDownloadableResource(request) && !this.excludedResources.has(request.url)
+        ).length;
+    }
+
+    /**
+     * 获取选中的可下载资源
+     */
+    getSelectedDownloadableResources() {
+        return this.filteredData.filter(request => 
+            this.isDownloadableResource(request) && !this.excludedResources.has(request.url)
+        );
     }
 }
 
