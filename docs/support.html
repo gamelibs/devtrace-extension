@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support - DevTrace</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            background: #f8f9fa;
+        }
+        
+        .container {
+            background: white;
+            padding: 3rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 0.5rem;
+        }
+        
+        h2 {
+            color: #34495e;
+            margin-top: 2rem;
+        }
+        
+        .back-link {
+            display: inline-block;
+            margin-bottom: 2rem;
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        
+        .faq-item {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .faq-question {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+        }
+        
+        .contact-info {
+            background: #e3f2fd;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin: 2rem 0;
+        }
+        
+        .feature-demo {
+            background: #f1f8e9;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
+        
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: Monaco, 'Courier New', monospace;
+        }
+        
+        ul {
+            margin: 1rem 0;
+            padding-left: 2rem;
+        }
+        
+        li {
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← Back to Home</a>
+        
+        <h1>Support & Help</h1>
+        <p>Get help with DevTrace and learn how to use all its features effectively.</p>
+
+        <h2>🚀 Getting Started</h2>
+        <div class="feature-demo">
+            <h3>Basic Usage</h3>
+            <ol>
+                <li>Click the extension icon in your Chrome toolbar</li>
+                <li>Enter the URL of the website you want to analyze</li>
+                <li>Click "Start Capture" and grant permission for that domain</li>
+                <li>Navigate the website in the opened tab</li>
+                <li>Return to the extension to view captured requests</li>
+                <li>Use filters to focus on specific types of requests</li>
+                <li>Export data or save individual resources as needed</li>
+            </ol>
+        </div>
+
+        <h2>❓ Frequently Asked Questions</h2>
+        
+        <div class="faq-item">
+            <div class="faq-question">Q: Why does the extension ask for permissions?</div>
+            <div class="faq-answer">A: The extension uses an on-demand permission model for security. It only requests access to specific domains when you choose to analyze them. This ensures your privacy and follows security best practices.</div>
+        </div>
+        
+        <div class="faq-item">
+            <div class="faq-question">Q: Is my data safe? Does the extension send data to servers?</div>
+            <div class="faq-answer">A: Absolutely safe! All data processing happens locally on your device. Nothing is uploaded to external servers. You have complete control over your data.</div>
+        </div>
+        
+        <div class="faq-item">
+            <div class="faq-question">Q: Why can't I see some requests?</div>
+            <div class="faq-answer">A: The extension has smart filtering enabled by default to exclude ads, trackers, and other noise. You can adjust filter settings in the extension popup to show more request types.</div>
+        </div>
+        
+        <div class="faq-item">
+            <div class="faq-question">Q: How do I export captured resources?</div>
+            <div class="faq-answer">A: Use the "Export Resources" button to save all selected resources, or click individual "Save" buttons for specific files. Resources are saved with their original directory structure maintained.</div>
+        </div>
+        
+        <div class="faq-item">
+            <div class="faq-question">Q: Can I analyze localhost or local development sites?</div>
+            <div class="faq-answer">A: Yes! The extension works with any accessible URL, including localhost, local IPs, and development servers.</div>
+        </div>
+        
+        <div class="faq-item">
+            <div class="faq-question">Q: The extension isn't capturing some requests. What's wrong?</div>
+            <div class="faq-answer">A: Check your filtering settings. Ensure "Block Ads" and "Block Static" are configured as needed. Some requests might be filtered out to reduce noise in the analysis.</div>
+        </div>
+
+        <h2>🛠️ Advanced Features</h2>
+        
+        <div class="feature-demo">
+            <h3>Smart Filtering</h3>
+            <ul>
+                <li><strong>Block Ads:</strong> Automatically excludes advertising and tracking requests</li>
+                <li><strong>Block Static:</strong> Filters out images, CSS, fonts, and media files</li>
+                <li><strong>Custom Domains:</strong> Add specific domains to your blocklist</li>
+                <li><strong>Request Types:</strong> Filter by XHR, Fetch, WebSocket, etc.</li>
+            </ul>
+        </div>
+        
+        <div class="feature-demo">
+            <h3>Export Options</h3>
+            <ul>
+                <li><strong>Batch Export:</strong> Save all selected resources at once</li>
+                <li><strong>Directory Structure:</strong> Maintains original website folder organization</li>
+                <li><strong>JSON Export:</strong> Export request data for further analysis</li>
+                <li><strong>Individual Save:</strong> Save specific resources one by one</li>
+            </ul>
+        </div>
+
+        <h2>🐛 Troubleshooting</h2>
+        
+        <div class="faq-item">
+            <div class="faq-question">Extension popup won't open</div>
+            <div class="faq-answer">
+                <p>Try these steps:</p>
+                <ol>
+                    <li>Right-click the extension icon and select "Options" or "Manage"</li>
+                    <li>Disable and re-enable the extension</li>
+                    <li>Refresh any open tabs</li>
+                    <li>Restart Chrome if the issue persists</li>
+                </ol>
+            </div>
+        </div>
+        
+        <div class="faq-item">
+            <div class="faq-question">Permission denied errors</div>
+            <div class="faq-answer">
+                <p>This happens when:</p>
+                <ul>
+                    <li>You clicked "Deny" on the permission request</li>
+                    <li>The domain has special security restrictions</li>
+                    <li>Chrome blocked the request for security reasons</li>
+                </ul>
+                <p>Try entering the URL again and click "Allow" when prompted.</p>
+            </div>
+        </div>
+        
+        <div class="faq-item">
+            <div class="faq-question">Downloads not working</div>
+            <div class="faq-answer">
+                <p>Check these points:</p>
+                <ul>
+                    <li>Ensure Chrome has permission to download files</li>
+                    <li>Check if your download folder has sufficient space</li>
+                    <li>Some resources might be blocked by CORS policies</li>
+                    <li>Try saving individual files instead of batch export</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2>📞 Contact Support</h2>
+        <div class="contact-info">
+            <h3>Need More Help?</h3>
+            <p>If you can't find the answer to your question, please reach out:</p>
+            <ul>            <li><strong>GitHub Issues:</strong> <a href="https://github.com/gamelibs/devtrace-extension/issues">Report bugs or request features</a></li>
+            <li><strong>Email Support:</strong> support@gamelibs.github.io</li>
+                <li><strong>Response Time:</strong> We typically respond within 24-48 hours</li>
+            </ul>
+            
+            <p><strong>When reporting issues, please include:</strong></p>
+            <ul>
+                <li>Chrome version</li>
+                <li>Extension version</li>
+                <li>Steps to reproduce the problem</li>
+                <li>Any error messages you see</li>
+            </ul>
+        </div>
+
+        <h2>🔄 Updates & Changelog</h2>
+        <p>Stay updated with the latest features and improvements:</p>
+        <ul>
+            <li><strong>Version 2.3:</strong> Added resource selection, improved export functionality</li>
+            <li><strong>Version 2.2:</strong> Enhanced filtering, better CORS handling</li>
+            <li><strong>Version 2.1:</strong> Improved UI, added batch export</li>
+            <li><strong>Version 2.0:</strong> Major rewrite with Manifest V3 support</li>
+        </ul>
+
+        <div class="contact-info">
+            <h3>💡 Pro Tips</h3>
+            <ul>
+                <li>Use keyboard shortcut <code>Ctrl+Shift+E</code> (or <code>Cmd+Shift+E</code> on Mac) to quickly access the extension</li>
+                <li>Right-click on requests for additional context menu options</li>
+                <li>Use the search box to quickly find specific URLs or domains</li>
+                <li>Check the console for any error messages if something isn't working</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
