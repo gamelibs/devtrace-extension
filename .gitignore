@@ -1,0 +1,38 @@
+# DevTrace Extension .gitignore
+
+# 临时和缓存文件
+*.tmp
+*.temp
+*~
+.DS_Store
+
+# VS Code 文件
+.vscode/settings.json
+.vscode/launch.json
+
+# 已删除的旧文件 - VS Code 可能恢复这些文件
+PRIVACY.md
+PUBLISH_GUIDE.md
+PROJECT_NAME_ANALYSIS.md
+NAME_SUGGESTIONS.md
+GITHUB_SETUP.md
+GITHUB_PAGES_SETUP.md
+build.sh
+build-with-minify.sh
+
+# 包含敏感信息的临时脚本和文档
+PUSH_SOLUTIONS.md
+TOKEN_GUIDE.md
+SUCCESS_SUMMARY.md
+GITHUB_ACTIONS_EXPLAINED.md
+VSCODE_FILE_RECOVERY_SOLUTION.md
+git-push.sh
+verify-token.sh
+upload-checklist.sh
+
+# 任何包含token的文件
+*token*
+*TOKEN*
+
+# 构建临时文件
+*.zip.temp

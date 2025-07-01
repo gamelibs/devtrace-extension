@@ -18,7 +18,7 @@ echo "   4. 生成并复制Token"
 echo ""
 echo "🔐 推送时的认证信息："
 echo "   用户名：gamelibs"
-echo "   密码：[您的Personal Access Token]"
+echo "   密码：[您的Personal Access Token - 请勿在此脚本中填写]"
 echo ""
 
 # 检查是否有未提交的更改
@@ -61,5 +61,5 @@ else
     echo "   确认：Token应以 'github_pat_' 开头"
     echo ""
     echo "💡 验证Token权限的方法："
-    echo "   查看文件：TOKEN_GUIDE.md"
+    echo "   创建新Token时确保勾选正确权限"
 fi
