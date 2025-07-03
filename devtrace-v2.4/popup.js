@@ -13,7 +13,8 @@ class WebRequestCaptureApp {    constructor() {
             maxRequests: 100,
             saveDetails: false,
             blockAds: true,
-            blockStatic: false
+            blockStatic: false,
+            defaultView: 'popup'  // 'popup' 或 'window'
         };
         this.filters = {
             domain: '',
@@ -29,13 +30,28 @@ class WebRequestCaptureApp {    constructor() {
      */
     async initializeApp() {
         try {
+            console.log('DevTrace: Initializing application...');
             await this.loadSettings();
             this.bindEvents();
             this.setupMessageListener();
             this.loadSavedUrl();
             this.updateUI();
+            
+            // 检查用户偏好，如果设置为窗口模式且当前是popup，则自动打开独立窗口
+            if (this.settings.defaultView === 'window' && this.isPopupMode()) {
+                console.log('DevTrace: User prefers window mode, auto-opening standalone window...');
+                setTimeout(() => {
+                    this.openWindow();
+                    // 立即关闭popup
+                    setTimeout(() => {
+                        window.close();
+                    }, 300);
+                }, 100);
+            }
+            
+            console.log('DevTrace: Application initialized successfully');
         } catch (error) {
-            console.error('Failed to initialize app:', error);
+            console.error('DevTrace: Failed to initialize app:', error);
             this.showError('Failed to initialize application');
         }
     }    /**
@@ -45,11 +61,9 @@ class WebRequestCaptureApp {    constructor() {
         // 控制按钮
         document.getElementById('startButton').addEventListener('click', () => this.startCapture());
         document.getElementById('stopButton').addEventListener('click', () => this.stopCapture());
+        document.getElementById('openWindowButton').addEventListener('click', () => this.openWindow());
         
-        // 窗口控制按钮
-        document.getElementById('closeButton').addEventListener('click', () => this.closeWindow());
-        document.getElementById('minimizeButton').addEventListener('click', () => this.minimizeWindow());
-          // 数据操作按钮
+        // 数据操作按钮
         document.getElementById('clearButton').addEventListener('click', () => this.clearData());
         document.getElementById('exportButton').addEventListener('click', () => this.exportData());
         document.getElementById('exportResourcesButton').addEventListener('click', () => this.exportResources());
@@ -80,22 +94,6 @@ class WebRequestCaptureApp {    constructor() {
             }
         });
 
-        // 添加键盘快捷键支持
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey || e.metaKey) {
-                switch (e.key) {
-                    case 'w':
-                        e.preventDefault();
-                        this.closeWindow();
-                        break;
-                    case 'm':
-                        e.preventDefault();
-                        this.minimizeWindow();
-                        break;
-                }
-            }
-        });
-
         // 添加窗口拖拽功能
         this.addDragFunctionality();
     }
@@ -116,8 +114,17 @@ class WebRequestCaptureApp {    constructor() {
      */
     loadSavedUrl() {
         chrome.storage.local.get(['lastUrl'], (result) => {
-            if (result.lastUrl) {
-                document.getElementById('urlInput').value = result.lastUrl;
+            if (result.lastUrl && result.lastUrl.trim()) {
+                try {
+                    // 验证保存的URL是否有效
+                    const testUrl = result.lastUrl.startsWith('http') ? result.lastUrl : `https://${result.lastUrl}`;
+                    new URL(testUrl); // 测试URL是否有效
+                    document.getElementById('urlInput').value = result.lastUrl;
+                } catch (error) {
+                    console.warn('Saved URL is invalid, clearing it:', result.lastUrl);
+                    // 清除无效的保存URL
+                    chrome.storage.local.remove(['lastUrl']);
+                }
             }
         });
     }
@@ -141,8 +148,13 @@ class WebRequestCaptureApp {    constructor() {
      * 开始捕获
      */
     async startCapture() {
+        console.log('DevTrace: startCapture() called');
+        
         const url = document.getElementById('urlInput').value.trim();
+        console.log('DevTrace: Input URL:', url);
+        
         if (!url) {
+            console.log('DevTrace: Empty URL');
             this.showError('Please enter a valid URL');
             return;
         }
@@ -150,10 +162,10 @@ class WebRequestCaptureApp {    constructor() {
         try {
             // 添加协议前缀（如果缺少）
             const fullUrl = url.startsWith('http') ? url : `https://${url}`;
-            const targetDomain = new URL(fullUrl).hostname;
+            console.log('DevTrace: Full URL:', fullUrl);
             
-            // 显示权限请求提示
-            this.showInfo(`Requesting permission to monitor ${targetDomain}...`);
+            const targetDomain = new URL(fullUrl).hostname;
+            console.log('DevTrace: Target domain:', targetDomain);
             
             // 保存URL
             chrome.storage.local.set({ lastUrl: url });
@@ -163,6 +175,8 @@ class WebRequestCaptureApp {    constructor() {
                 message: 'start_capture', 
                 url: fullUrl 
             }, (response) => {
+                console.log('DevTrace: Background response:', response);
+                
                 if (response && response.success) {
                     this.isCapturing = true;
                     this.updateCaptureState();
@@ -171,6 +185,8 @@ class WebRequestCaptureApp {    constructor() {
                     this.showSuccess(`Started capturing requests for ${response.targetDomain || targetDomain}`);
                 } else {
                     const errorMsg = response?.error || 'Failed to start capture';
+                    console.log('DevTrace: Capture failed:', errorMsg);
+                    
                     if (errorMsg.includes('Permission denied')) {
                         this.showError('Permission denied. Please grant access to analyze this website.');
                     } else {
@@ -179,7 +195,8 @@ class WebRequestCaptureApp {    constructor() {
                 }
             });
         } catch (error) {
-            this.showError('Invalid URL format');
+            console.error('DevTrace: URL parsing error:', error);
+            this.showError('Invalid URL format. Please enter a valid URL (e.g., example.com or https://example.com)');
         }
     }
 
@@ -1488,6 +1505,7 @@ class WebRequestCaptureApp {    constructor() {
         document.getElementById('saveDetailsSetting').checked = this.settings.saveDetails;
         document.getElementById('blockAdsSetting').checked = this.settings.blockAds;
         document.getElementById('blockStaticSetting').checked = this.settings.blockStatic;
+        document.getElementById('defaultViewSetting').value = this.settings.defaultView || 'popup';
     }
 
     /**
@@ -1498,7 +1516,8 @@ class WebRequestCaptureApp {    constructor() {
             maxRequests: parseInt(document.getElementById('maxRequestsSetting').value),
             saveDetails: document.getElementById('saveDetailsSetting').checked,
             blockAds: document.getElementById('blockAdsSetting').checked,
-            blockStatic: document.getElementById('blockStaticSetting').checked
+            blockStatic: document.getElementById('blockStaticSetting').checked,
+            defaultView: document.getElementById('defaultViewSetting').value
         };
 
         chrome.runtime.sendMessage({ 
@@ -1670,26 +1689,33 @@ class WebRequestCaptureApp {    constructor() {
     }
 
     /**
-     * 关闭窗口
+     * 打开独立窗口
      */
-    closeWindow() {
-        chrome.runtime.sendMessage({ message: 'close_window' }, (response) => {
-            if (!response || !response.success) {
-                // 备用方案：直接关闭窗口
-                window.close();
+    openWindow() {
+        console.log('DevTrace: Opening standalone window...');
+        chrome.runtime.sendMessage({ message: 'open_window' }, (response) => {
+            if (response && response.success) {
+                console.log('DevTrace: Standalone window opened successfully');
+                // 如果是popup模式且用户手动点击，也关闭popup
+                if (this.isPopupMode()) {
+                    setTimeout(() => {
+                        window.close();
+                    }, 300);
+                }
+            } else {
+                console.error('DevTrace: Failed to open standalone window:', response?.error);
+                this.showError('Failed to open standalone window');
             }
         });
     }
 
     /**
-     * 最小化窗口
+     * 检测是否为popup模式
      */
-    minimizeWindow() {
-        chrome.runtime.sendMessage({ message: 'minimize_window' }, (response) => {
-            if (!response || !response.success) {
-                console.log('Cannot minimize window');
-            }
-        });    }
+    isPopupMode() {
+        // 检查窗口尺寸，popup通常有固定的小尺寸
+        return window.outerWidth <= 850 && window.outerHeight <= 650;
+    }
 
     /**
      * 使用Chrome Downloads API保存资源（批量保存专用）

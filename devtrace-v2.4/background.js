@@ -7,6 +7,7 @@ let captureState = {
         saveDetails: false,
         blockAds: true,
         blockStatic: false,
+        defaultView: 'popup',
         blockedDomains: [
             'doubleclick.net',
             'googlesyndication.com',
@@ -66,8 +67,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 break;
             case 'close_window':
                 handleCloseWindow(sendResponse);
-                break;            case 'minimize_window':
+                break;
+            case 'minimize_window':
                 handleMinimizeWindow(sendResponse);
+                break;
+            case 'open_window':
+                handleOpenWindow(sendResponse);
                 break;
             default:
                 sendResponse({ error: 'Unknown message type' });
@@ -82,11 +87,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // 开始捕获请求
 async function handleStartCapture(request, sendResponse) {
     try {
-        if (!request.url) {
+        if (!request.url || !request.url.trim()) {
             throw new Error('URL is required');
         }
 
-        const targetUrl = new URL(request.url);
+        let targetUrl;
+        try {
+            targetUrl = new URL(request.url);
+        } catch (urlError) {
+            throw new Error('Invalid URL format. Please check the URL and try again.');
+        }
+
         const targetOrigin = `${targetUrl.protocol}//${targetUrl.host}/*`;
 
         // 请求特定域名的权限
@@ -397,6 +408,15 @@ function handleMinimizeWindow(sendResponse) {
     } else {
         sendResponse({ success: false, error: 'No window to minimize' });
     }
+}
+
+// 打开独立窗口
+function handleOpenWindow(sendResponse) {
+    openCaptureWindow().then(() => {
+        sendResponse({ success: true });
+    }).catch((error) => {
+        sendResponse({ success: false, error: error.message });
+    });
 }
 
 // 监听窗口关闭事件

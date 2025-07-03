@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DevTrace Icon Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f0f0f0;
+        }
+        .icon-container {
+            margin: 20px 0;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        canvas {
+            border: 1px solid #ddd;
+            margin: 10px;
+            background: white;
+        }
+        .download-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>DevTrace Extension Icons</h1>
+    
+    <div class="icon-container">
+        <h3>16x16 Icons</h3>
+        <canvas id="icon16" width="16" height="16"></canvas>
+        <canvas id="default_icon16" width="16" height="16"></canvas>
+        <button class="download-btn" onclick="downloadIcon('icon16', 'icon16.png')">Download icon16.png</button>
+        <button class="download-btn" onclick="downloadIcon('default_icon16', 'default_icon16.png')">Download default_icon16.png</button>
+    </div>
+
+    <div class="icon-container">
+        <h3>48x48 Icons</h3>
+        <canvas id="icon48" width="48" height="48"></canvas>
+        <canvas id="default_icon48" width="48" height="48"></canvas>
+        <button class="download-btn" onclick="downloadIcon('icon48', 'icon48.png')">Download icon48.png</button>
+        <button class="download-btn" onclick="downloadIcon('default_icon48', 'default_icon48.png')">Download default_icon48.png</button>
+    </div>
+
+    <div class="icon-container">
+        <h3>128x128 Icons</h3>
+        <canvas id="icon128" width="128" height="128"></canvas>
+        <canvas id="default_icon128" width="128" height="128"></canvas>
+        <button class="download-btn" onclick="downloadIcon('icon128', 'icon128.png')">Download icon128.png</button>
+        <button class="download-btn" onclick="downloadIcon('default_icon128', 'default_icon128.png')">Download default_icon128.png</button>
+    </div>
+
+    <script>
+        // 创建美观的DevTrace图标
+        function createIcon(canvasId, size) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            
+            // 清除画布
+            ctx.clearRect(0, 0, size, size);
+            
+            // 设置抗锯齿
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            
+            // 背景渐变
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, '#4a90e2');
+            gradient.addColorStop(1, '#2c5aa0');
+            
+            // 绘制圆角背景
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            const radius = size * 0.15;
+            ctx.roundRect(0, 0, size, size, radius);
+            ctx.fill();
+            
+            // 绘制网络节点图案
+            ctx.strokeStyle = 'white';
+            ctx.fillStyle = 'white';
+            ctx.lineWidth = Math.max(1, size * 0.08);
+            
+            // 计算比例
+            const scale = size / 16;
+            
+            // 绘制连接线
+            ctx.beginPath();
+            
+            // 主要连接线
+            ctx.moveTo(3 * scale, 6 * scale);
+            ctx.lineTo(8 * scale, 6 * scale);
+            ctx.lineTo(13 * scale, 4 * scale);
+            
+            ctx.moveTo(8 * scale, 6 * scale);
+            ctx.lineTo(13 * scale, 8 * scale);
+            
+            ctx.moveTo(3 * scale, 10 * scale);
+            ctx.lineTo(8 * scale, 10 * scale);
+            ctx.lineTo(13 * scale, 12 * scale);
+            
+            ctx.stroke();
+            
+            // 绘制节点
+            // 左侧节点
+            ctx.beginPath();
+            ctx.arc(3 * scale, 6 * scale, 1.5 * scale, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(3 * scale, 10 * scale, 1.5 * scale, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // 中间节点
+            ctx.beginPath();
+            ctx.arc(8 * scale, 6 * scale, 1.2 * scale, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(8 * scale, 10 * scale, 1.2 * scale, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // 右侧节点
+            ctx.beginPath();
+            ctx.arc(13 * scale, 4 * scale, 1 * scale, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(13 * scale, 8 * scale, 1 * scale, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(13 * scale, 12 * scale, 1 * scale, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+        
+        // 创建默认图标（灰色版本用于inactive状态）
+        function createDefaultIcon(canvasId, size) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            
+            // 清除画布
+            ctx.clearRect(0, 0, size, size);
+            
+            // 设置抗锯齿
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            
+            // 背景渐变（灰色）
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, '#8a8a8a');
+            gradient.addColorStop(1, '#606060');
+            
+            // 绘制圆角背景
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            const radius = size * 0.15;
+            ctx.roundRect(0, 0, size, size, radius);
+            ctx.fill();
+            
+            // 绘制网络节点图案
+            ctx.strokeStyle = 'white';
+            ctx.fillStyle = 'white';
+            ctx.lineWidth = Math.max(1, size * 0.08);
+            
+            // 计算比例
+            const scale = size / 16;
+            
+            // 绘制连接线
+            ctx.beginPath();
+            
+            // 主要连接线
+            ctx.moveTo(3 * scale, 6 * scale);
+            ctx.lineTo(8 * scale, 6 * scale);
+            ctx.lineTo(13 * scale, 4 * scale);
+            
+            ctx.moveTo(8 * scale, 6 * scale);
+            ctx.lineTo(13 * scale, 8 * scale);
+            
+            ctx.moveTo(3 * scale, 10 * scale);
+            ctx.lineTo(8 * scale, 10 * scale);
+            ctx.lineTo(13 * scale, 12 * scale);
+            
+            ctx.stroke();
+            
+            // 绘制节点
+            // 左侧节点
+            ctx.beginPath();
+            ctx.arc(3 * scale, 6 * scale, 1.5 * scale, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(3 * scale, 10 * scale, 1.5 * scale, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // 中间节点
+            ctx.beginPath();
+            ctx.arc(8 * scale, 6 * scale, 1.2 * scale, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(8 * scale, 10 * scale, 1.2 * scale, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // 右侧节点
+            ctx.beginPath();
+            ctx.arc(13 * scale, 4 * scale, 1 * scale, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(13 * scale, 8 * scale, 1 * scale, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(13 * scale, 12 * scale, 1 * scale, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+        
+        // 下载图标
+        function downloadIcon(canvasId, filename) {
+            const canvas = document.getElementById(canvasId);
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+        
+        // 生成所有图标
+        window.onload = function() {
+            // 扩展管理页面图标（彩色）
+            createIcon('icon16', 16);
+            createIcon('icon48', 48);
+            createIcon('icon128', 128);
+            
+            // 工具栏图标（灰色，用于inactive状态）
+            createDefaultIcon('default_icon16', 16);
+            createDefaultIcon('default_icon48', 48);
+            createDefaultIcon('default_icon128', 128);
+        };
+        
+        // 为旧版浏览器添加roundRect支持
+        if (!CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function(x, y, width, height, radius) {
+                this.moveTo(x + radius, y);
+                this.lineTo(x + width - radius, y);
+                this.quadraticCurveTo(x + width, y, x + width, y + radius);
+                this.lineTo(x + width, y + height - radius);
+                this.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+                this.lineTo(x + radius, y + height);
+                this.quadraticCurveTo(x, y + height, x, y + height - radius);
+                this.lineTo(x, y + radius);
+                this.quadraticCurveTo(x, y, x + radius, y);
+            };
+        }
+    </script>
+</body>
+</html>
