@@ -14,7 +14,9 @@ class WebRequestCaptureApp {    constructor() {
             saveDetails: false,
             blockAds: true,
             blockStatic: false,
-            defaultView: 'popup'  // 'popup' 或 'window'
+            defaultView: 'popup',  // 'popup' 或 'window'
+            captureMode: 'all_domains', // 新增：捕获模式
+            allowedDomains: [] // 新增：白名单域名列表
         };
         this.filters = {
             domain: '',
@@ -87,6 +89,14 @@ class WebRequestCaptureApp {    constructor() {
         document.getElementById('saveSettings').addEventListener('click', () => this.saveSettings());
         document.getElementById('cancelSettings').addEventListener('click', () => this.closeSettings());
         
+        // 捕获模式变化事件
+        document.getElementById('captureModeSelect').addEventListener('change', (e) => {
+            this.toggleWhitelistSettings(e.target.value === 'whitelist');
+        });
+        
+        // 黑名单域名管理
+        this.setupBlacklistHandlers();
+        
         // URL输入框回车事件
         document.getElementById('urlInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -96,6 +106,148 @@ class WebRequestCaptureApp {    constructor() {
 
         // 添加窗口拖拽功能
         this.addDragFunctionality();
+    }
+
+    /**
+     * 设置黑名单域名处理器
+     */
+    setupBlacklistHandlers() {
+        const addDomainBtn = document.getElementById('addBlockedDomainBtn');
+        const domainInput = document.getElementById('blockedDomainInput');
+        
+        if (addDomainBtn && domainInput) {
+            // 添加域名按钮点击事件
+            addDomainBtn.addEventListener('click', () => {
+                this.addBlockedDomain();
+            });
+            
+            // 输入框回车事件
+            domainInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.addBlockedDomain();
+                }
+            });
+        }
+        
+        // 加载并显示当前黑名单
+        this.loadBlockedDomains();
+    }
+
+    /**
+     * 添加黑名单域名
+     */
+    addBlockedDomain() {
+        const input = document.getElementById('blockedDomainInput');
+        const domain = input.value.trim();
+        
+        if (!domain) {
+            this.showToast('Please enter a domain name', 'warning');
+            return;
+        }
+        
+        // 基本域名格式验证
+        if (!this.isValidDomain(domain)) {
+            this.showToast('Please enter a valid domain name (e.g., example.com)', 'error');
+            return;
+        }
+        
+        // 发送添加黑名单域名的消息
+        chrome.runtime.sendMessage({
+            message: 'add_blocked_domain',
+            domain: domain
+        }, (response) => {
+            if (response && response.success) {
+                this.showToast(`Domain "${domain}" added to blacklist`, 'success');
+                input.value = ''; // 清空输入框
+                this.loadBlockedDomains(); // 重新加载显示
+            } else {
+                const error = response?.error || 'Failed to add domain';
+                if (error.includes('already exists')) {
+                    this.showToast(`Domain "${domain}" is already in blacklist`, 'warning');
+                } else {
+                    this.showToast(error, 'error');
+                }
+            }
+        });
+    }
+
+    /**
+     * 移除黑名单域名
+     */
+    removeBlockedDomain(domain) {
+        chrome.runtime.sendMessage({
+            message: 'remove_blocked_domain',
+            domain: domain
+        }, (response) => {
+            if (response && response.success) {
+                this.showToast(`Domain "${domain}" removed from blacklist`, 'success');
+                this.loadBlockedDomains(); // 重新加载显示
+            } else {
+                this.showToast(response?.error || 'Failed to remove domain', 'error');
+            }
+        });
+    }
+
+    /**
+     * 加载并显示黑名单域名
+     */
+    loadBlockedDomains() {
+        chrome.runtime.sendMessage({ message: 'get_settings' }, (response) => {
+            if (response && response.settings && response.settings.blockedDomains) {
+                this.displayBlockedDomains(response.settings.blockedDomains);
+            }
+        });
+    }
+
+    /**
+     * 显示黑名单域名标签
+     */
+    displayBlockedDomains(blockedDomains) {
+        const container = document.getElementById('blockedDomainsContainer');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        
+        if (!blockedDomains || blockedDomains.length === 0) {
+            container.innerHTML = '<div class="no-domains">No blocked domains</div>';
+            return;
+        }
+        
+        blockedDomains.forEach(domain => {
+            const tag = document.createElement('div');
+            tag.className = 'domain-tag';
+            tag.innerHTML = `
+                <span class="domain-text">${domain}</span>
+                <button class="remove-btn" data-domain="${domain}" title="Remove ${domain}">×</button>
+            `;
+            
+            // 添加删除按钮事件
+            const removeBtn = tag.querySelector('.remove-btn');
+            removeBtn.addEventListener('click', () => {
+                this.removeBlockedDomain(domain);
+            });
+            
+            container.appendChild(tag);
+        });
+    }
+
+    /**
+     * 验证域名格式
+     */
+    isValidDomain(domain) {
+        // 基本域名格式验证
+        const domainRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+        
+        if (!domainRegex.test(domain)) {
+            return false;
+        }
+        
+        // 检查是否包含至少一个点（除非是localhost等特殊情况）
+        if (!domain.includes('.') && !['localhost', 'local'].includes(domain.toLowerCase())) {
+            return false;
+        }
+        
+        return true;
     }
 
     /**
@@ -182,7 +334,11 @@ class WebRequestCaptureApp {    constructor() {
                     this.updateCaptureState();
                     this.openUrlInCurrentTab(fullUrl);
                     document.getElementById('targetDomain').textContent = response.targetDomain || targetDomain;
-                    this.showSuccess(`Started capturing requests for ${response.targetDomain || targetDomain}`);
+                    
+                    // 显示包含捕获模式的成功消息
+                    const captureMode = response.captureMode || 'main_domain_only';
+                    const modeText = this.getCaptureModeText(captureMode);
+                    this.showSuccess(`Started capturing requests for ${response.targetDomain || targetDomain} (${modeText})`);
                 } else {
                     const errorMsg = response?.error || 'Failed to start capture';
                     console.log('DevTrace: Capture failed:', errorMsg);
@@ -1506,6 +1662,18 @@ class WebRequestCaptureApp {    constructor() {
         document.getElementById('blockAdsSetting').checked = this.settings.blockAds;
         document.getElementById('blockStaticSetting').checked = this.settings.blockStatic;
         document.getElementById('defaultViewSetting').value = this.settings.defaultView || 'popup';
+        document.getElementById('captureModeSelect').value = this.settings.captureMode || 'all_domains';
+        
+        // 设置白名单域名
+        if (this.settings.allowedDomains) {
+            document.getElementById('allowedDomainsInput').value = this.settings.allowedDomains.join('\n');
+        }
+        
+        // 显示/隐藏白名单设置
+        this.toggleWhitelistSettings(this.settings.captureMode === 'whitelist');
+        
+        // 加载并显示黑名单域名
+        this.loadBlockedDomains();
     }
 
     /**
@@ -1517,7 +1685,12 @@ class WebRequestCaptureApp {    constructor() {
             saveDetails: document.getElementById('saveDetailsSetting').checked,
             blockAds: document.getElementById('blockAdsSetting').checked,
             blockStatic: document.getElementById('blockStaticSetting').checked,
-            defaultView: document.getElementById('defaultViewSetting').value
+            defaultView: document.getElementById('defaultViewSetting').value,
+            captureMode: document.getElementById('captureModeSelect').value,
+            allowedDomains: document.getElementById('allowedDomainsInput').value
+                .split('\n')
+                .map(domain => domain.trim())
+                .filter(domain => domain.length > 0)
         };
 
         chrome.runtime.sendMessage({ 
@@ -1539,6 +1712,29 @@ class WebRequestCaptureApp {    constructor() {
      */
     closeSettings() {
         document.getElementById('settingsPanel').style.display = 'none';
+    }
+
+    /**
+     * 切换白名单设置显示
+     */
+    toggleWhitelistSettings(show) {
+        const container = document.getElementById('whitelistContainer');
+        if (container) {
+            container.style.display = show ? 'block' : 'none';
+        }
+    }
+
+    /**
+     * 获取捕获模式的显示文本
+     */
+    getCaptureModeText(captureMode) {
+        const modeTexts = {
+            'main_domain_only': 'Main Domain Only',
+            'include_subdomains': 'Include Subdomains',
+            'all_domains': 'All Domains + iframes',
+            'whitelist': 'Whitelist Mode'
+        };
+        return modeTexts[captureMode] || 'Unknown Mode';
     }
 
     /**

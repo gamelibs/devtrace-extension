@@ -459,6 +459,76 @@
             gap: 5px;
         }
 
+        /* 域名标签样式 */
+        .domains-tags-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            align-items: flex-start;
+        }
+
+        .domain-tag {
+            display: inline-flex;
+            align-items: center;
+            background: #e74c3c;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+            max-width: 150px;
+        }
+
+        .domain-tag.allowed {
+            background: #27ae60;
+        }
+
+        .domain-tag .domain-text {
+            margin-right: 5px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .domain-tag .remove-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            padding: 0;
+            margin: 0;
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background-color 0.2s;
+        }
+
+        .domain-tag .remove-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .domain-input-container {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .no-domains {
+            color: #666;
+            font-style: italic;
+            font-size: 11px;
+            padding: 8px;
+            text-align: center;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border: 1px dashed #ddd;
+        }
+
         /* Empty State */
         .empty-state {
             display: flex;
@@ -618,6 +688,29 @@
                 <option value="popup">Popup Mode</option>
                 <option value="window">Window Mode</option>
             </select>
+        </div>
+        <div class="setting-item">
+            <label>Capture Mode:</label>
+            <select id="captureModeSelect" class="setting-input" style="width: 150px;">
+                <option value="main_domain_only">Main Domain Only</option>
+                <option value="include_subdomains">Include Subdomains</option>
+                <option value="all_domains">All Domains (+ iframes)</option>
+                <option value="whitelist">Whitelist Mode</option>
+            </select>
+        </div>
+        <div class="setting-item" id="whitelistContainer" style="display: none;">
+            <label>Allowed Domains:</label>
+            <textarea id="allowedDomainsInput" placeholder="example.com&#10;api.example.com&#10;cdn.example.com" style="width: 200px; height: 60px; font-size: 11px; padding: 4px; border: 1px solid #ddd; border-radius: 3px; resize: vertical;"></textarea>
+        </div>
+        <div class="setting-item" style="flex-direction: column; align-items: flex-start;">
+            <label style="margin-bottom: 8px;">Blocked Domains (Blacklist):</label>
+            <div class="domain-input-container" style="width: 100%; margin-bottom: 8px;">
+                <input type="text" id="blockedDomainInput" placeholder="Enter domain to block (e.g., ads.example.com)" style="flex: 1; padding: 4px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px;">
+                <button id="addBlockedDomainBtn" class="btn btn-secondary" style="margin-left: 5px; padding: 4px 8px; font-size: 11px;">Add</button>
+            </div>
+            <div id="blockedDomainsContainer" class="domains-tags-container" style="width: 100%; min-height: 40px; max-height: 120px; overflow-y: auto; border: 1px solid #ddd; border-radius: 3px; padding: 8px; background: #f9f9f9;">
+                <!-- 黑名单域名标签将在这里动态生成 -->
+            </div>
         </div>
         <div style="margin-top: 15px; text-align: right;">
             <button id="saveSettings" class="btn btn-primary">Save</button>

@@ -8,13 +8,19 @@ let captureState = {
         blockAds: true,
         blockStatic: false,
         defaultView: 'popup',
+        captureMode: 'all_domains', // 新增：捕获模式
+        allowedDomains: [], // 新增：白名单域名列表
         blockedDomains: [
             'doubleclick.net',
             'googlesyndication.com',
             'googletagmanager.com',
             'facebook.com/tr',
             'google-analytics.com',
-            'googleadservices.com'
+            'googleadservices.com',
+            'cdn.cookielaw.org',
+            'cdn.jsdelivr.net',
+            'analytics.google.com',
+            
         ]
     },
     targetDomain: null,
@@ -65,6 +71,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             case 'get_settings':
                 sendResponse({ settings: captureState.settings });
                 break;
+            case 'add_blocked_domain':
+                handleAddBlockedDomain(request.domain, sendResponse);
+                break;
+            case 'remove_blocked_domain':
+                handleRemoveBlockedDomain(request.domain, sendResponse);
+                break;
             case 'close_window':
                 handleCloseWindow(sendResponse);
                 break;
@@ -98,11 +110,28 @@ async function handleStartCapture(request, sendResponse) {
             throw new Error('Invalid URL format. Please check the URL and try again.');
         }
 
-        const targetOrigin = `${targetUrl.protocol}//${targetUrl.host}/*`;
+        // 根据捕获模式决定监听的URL模式
+        const captureMode = captureState.settings.captureMode || 'all_domains';
+        let urls;
+        
+        switch (captureMode) {
+            case 'main_domain_only':
+                urls = [`${targetUrl.protocol}//${targetUrl.host}/*`];
+                break;
+            case 'include_subdomains':
+                urls = [`${targetUrl.protocol}//*.${targetUrl.hostname}/*`, `${targetUrl.protocol}//${targetUrl.host}/*`];
+                break;
+            case 'all_domains':
+            case 'whitelist':
+                urls = ["<all_urls>"]; // 监听所有URL，在shouldCaptureRequest中进行过滤
+                break;
+            default:
+                urls = [`${targetUrl.protocol}//${targetUrl.host}/*`];
+        }
 
-        // 请求特定域名的权限
+        // 请求权限
         const granted = await chrome.permissions.request({
-            origins: [targetOrigin]
+            origins: urls
         });
 
         if (!granted) {
@@ -115,17 +144,17 @@ async function handleStartCapture(request, sendResponse) {
         captureState.isCapturing = true;
         captureState.targetDomain = targetUrl.hostname;
 
-        // 添加请求监听器 - 仅监听目标域名
+        // 添加请求监听器 - 根据模式监听不同范围的请求
         chrome.webRequest.onBeforeRequest.addListener(
             handleWebRequest,
-            { urls: [targetOrigin] },
+            { urls: urls },
             ["requestBody"]
         );
 
         // 添加响应监听器以获取状态码和响应头
         chrome.webRequest.onCompleted.addListener(
             handleWebResponse,
-            { urls: [targetOrigin] },
+            { urls: urls },
             ["responseHeaders"]
         );
 
@@ -134,10 +163,11 @@ async function handleStartCapture(request, sendResponse) {
 
         sendResponse({ 
             success: true, 
-            targetDomain: captureState.targetDomain 
+            targetDomain: captureState.targetDomain,
+            captureMode: captureMode
         });
 
-        console.log(`Started capturing requests for domain: ${captureState.targetDomain}`);
+        console.log(`Started capturing requests for domain: ${captureState.targetDomain} (mode: ${captureMode})`);
     } catch (error) {
         sendResponse({ success: false, error: error.message });
     }
@@ -179,6 +209,66 @@ function handleUpdateSettings(newSettings, sendResponse) {
         captureState.settings = { ...captureState.settings, ...newSettings };
         saveSettings();
         sendResponse({ success: true });
+    } catch (error) {
+        sendResponse({ success: false, error: error.message });
+    }
+}
+
+// 添加域名到黑名单
+function handleAddBlockedDomain(domain, sendResponse) {
+    try {
+        if (!domain || typeof domain !== 'string') {
+            throw new Error('Invalid domain');
+        }
+        
+        // 清理域名格式
+        const cleanDomain = domain.toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+        
+        // 检查是否已存在
+        if (!captureState.settings.blockedDomains.includes(cleanDomain)) {
+            captureState.settings.blockedDomains.push(cleanDomain);
+            saveSettings();
+            
+            console.log(`✅ Added domain to blacklist: ${cleanDomain}`);
+            console.log(`📋 Current blacklist:`, captureState.settings.blockedDomains);
+            sendResponse({ 
+                success: true, 
+                domain: cleanDomain,
+                blockedDomains: captureState.settings.blockedDomains 
+            });
+        } else {
+            sendResponse({ 
+                success: false, 
+                error: 'Domain already in blacklist',
+                blockedDomains: captureState.settings.blockedDomains 
+            });
+        }
+    } catch (error) {
+        sendResponse({ success: false, error: error.message });
+    }
+}
+
+// 从黑名单移除域名
+function handleRemoveBlockedDomain(domain, sendResponse) {
+    try {
+        const index = captureState.settings.blockedDomains.indexOf(domain);
+        if (index > -1) {
+            captureState.settings.blockedDomains.splice(index, 1);
+            saveSettings();
+            
+            console.log(`Removed domain from blacklist: ${domain}`);
+            sendResponse({ 
+                success: true, 
+                domain: domain,
+                blockedDomains: captureState.settings.blockedDomains 
+            });
+        } else {
+            sendResponse({ 
+                success: false, 
+                error: 'Domain not found in blacklist',
+                blockedDomains: captureState.settings.blockedDomains 
+            });
+        }
     } catch (error) {
         sendResponse({ success: false, error: error.message });
     }
@@ -251,9 +341,45 @@ function handleWebResponse(details) {
 
 // 检查是否应该捕获请求
 function shouldCaptureRequest(domain, type) {
-    // 检查域名匹配
-    if (domain !== captureState.targetDomain) {
-        return false;
+    // 新增：支持多种捕获模式
+    const captureMode = captureState.settings.captureMode || 'main_domain_only';
+    
+    switch (captureMode) {
+        case 'main_domain_only':
+            // 原有模式：只捕获主域名
+            if (domain !== captureState.targetDomain) {
+                return false;
+            }
+            break;
+            
+        case 'include_subdomains':
+            // 包含子域名模式
+            if (!domain.endsWith(captureState.targetDomain) && domain !== captureState.targetDomain) {
+                return false;
+            }
+            break;
+            
+        case 'all_domains':
+            // 捕获所有域名（包括iframe和第三方资源）
+            // 不进行域名过滤，捕获所有请求
+            break;
+            
+        case 'whitelist':
+            // 白名单模式：只捕获指定的域名列表
+            const allowedDomains = captureState.settings.allowedDomains || [captureState.targetDomain];
+            const isAllowed = allowedDomains.some(allowedDomain => 
+                domain === allowedDomain || domain.endsWith('.' + allowedDomain)
+            );
+            if (!isAllowed) {
+                return false;
+            }
+            break;
+            
+        default:
+            // 默认只捕获主域名
+            if (domain !== captureState.targetDomain) {
+                return false;
+            }
     }
 
     // 检查广告屏蔽
@@ -268,6 +394,7 @@ function shouldCaptureRequest(domain, type) {
 
     // 检查自定义屏蔽域名
     if (captureState.settings.blockedDomains.some(blocked => domain.includes(blocked))) {
+        console.log(`🚫 Blocked domain request: ${domain} (matches blacklist)`);
         return false;
     }
 
