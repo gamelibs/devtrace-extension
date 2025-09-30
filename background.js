@@ -1,27 +1,171 @@
 // Enhanced background.js for Web Request Capture v2.0
+const DEFAULT_BLOCKED_DOMAINS = [
+    // Core Google / tracking
+    'doubleclick.net',
+    'googlesyndication.com',
+    'googletagmanager.com',
+    'facebook.com/tr',
+    'google-analytics.com',
+    'googleadservices.com',
+    'cdn.cookielaw.org',
+    'cdn.jsdelivr.net',
+    'analytics.google.com',
+    'google.com',
+    'www.google.com',
+    'fonts.googleapis.com',
+    'fonts.gstatic.com',
+    // From user screenshot - common ad / tracking / DSP / CDN helper domains
+    'match.adsrvr.org',
+    'adsrvr.org',
+    'x.bidswitch.net',
+    'bidswitch.net',
+    'stackadapt.com',
+    'srv.stackadapt.com',
+    'sync.srv.stackadapt.com',
+    'teads.tv',
+    'sync.teads.tv',
+    'criteo.com',
+    'px.ads.linkedin.com',
+    'linkedin.com',
+    'gstatic.com',
+    'tracking.prismpartner.smt.docomo.ne.jp',
+    'prismpartner.smt.docomo.ne.jp',
+    'pr-bh.ybp.yahoo.com',
+    'yahoo.com',
+    'creativecdn.com',
+    'temu.com',
+    'rtb2-useast.voisetech.com',
+    'voisetech.com',
+    'ep1.adtrafficquality.google',
+    'ep2.adtrafficquality.google',
+    'adtrafficquality.google',
+    'pixel.rnt-us-dsp-api.molocoo.com',
+    'molocoo.com',
+    // Additional from provided list
+    '2mdn.net',
+    'simpli.fi',
+    'zemanta.com',
+    'admaster.cc',
+    'tribalfusion.com',
+    'ladsp.com',
+    'bidr.io',
+    'mediago.io',
+    'popin.cc',
+    'outbrain.com',
+    'appier.net',
+    'adster.tech',
+    'quantserve.com',
+    'dotomi.com',
+    'advolve.io',
+    'gsspat.jp',
+    'moloco.com',
+    'googlevideo.com',
+    'ytimg.com',
+    'ggpht.com',
+    // Newly requested additions
+    'dynalyst-sync.adtdp.com',
+    'adtdp.com',
+    'ads.travelaudience.com',
+    'travelaudience.com',
+    'mweb.ck.inmobi.com',
+    'inmobi.com',
+    // Additional user requested blocking
+    'fout.jp',
+    'sync.fout.jp',
+    // Newly requested domains
+    'static.googleadsserving.cn',
+    'googleadsserving.cn',
+    'ib.adnxs.com',
+    'adnxs.com',
+    'sync-tm.everesttech.net',
+    'everesttech.net',
+    'us-u.openx.net',
+    'ipac.ctnsnet.com',
+    'dsp.adkernel.com'
+];
+
 let captureState = {
     isCapturing: false,
+    // in-memory current domain requests mirror (for popup quick access)
     capturedRequests: [],
+    // sessions persisted per domain: { [domain]: { requests:[], urlSet:[], requestCounter:number, lastUpdated:number } }
+    sessions: {},
     settings: {
         maxRequests: 1000,
         saveDetails: false,
         blockAds: true,
         blockStatic: false,
         defaultView: 'popup',
-        captureMode: 'all_domains', // 新增：捕获模式
-        allowedDomains: [], // 新增：白名单域名列表
-        blockedDomains: [
-            'doubleclick.net',
-            'googlesyndication.com',
-            'googletagmanager.com',
-            'facebook.com/tr',
-            'google-analytics.com',
-            'googleadservices.com'
-        ]
+        captureMode: 'all_domains',
+        allowedDomains: [],
+        blockedDomains: [...DEFAULT_BLOCKED_DOMAINS]
     },
     targetDomain: null,
     requestCounter: 0
 };
+
+// Debounce write timer
+let persistTimer = null;
+
+async function loadPersistedState() {
+    return new Promise(resolve => {
+        chrome.storage.local.get(['captureSessions','captureGlobal','captureSettings'], (res) => {
+            try {
+                if (res.captureSettings) {
+                    captureState.settings = { ...captureState.settings, ...res.captureSettings };
+                }
+                if (res.captureGlobal) {
+                    captureState.isCapturing = !!res.captureGlobal.isCapturing;
+                    captureState.targetDomain = res.captureGlobal.targetDomain || null;
+                }
+                if (res.captureSessions) {
+                    // revive sessions; convert urlSet array to Set later on demand
+                    captureState.sessions = res.captureSessions;
+                }
+                // hydrate current domain mirror
+                if (captureState.targetDomain && captureState.sessions[captureState.targetDomain]) {
+                    const sess = captureState.sessions[captureState.targetDomain];
+                    captureState.capturedRequests = sess.requests || [];
+                    captureState.requestCounter = sess.requestCounter || captureState.capturedRequests.length;
+                }
+                // After hydration ensure newly added default blocked domains are pruned
+                pruneBlockedFromCurrentSession();
+            } catch(e) {
+                console.error('Failed loading persisted state', e);
+            }
+            resolve();
+        });
+    });
+}
+
+function schedulePersist() {
+    if (persistTimer) clearTimeout(persistTimer);
+    persistTimer = setTimeout(persistNow, 600);
+}
+
+function persistNow() {
+    persistTimer = null;
+    try {
+        const serializableSessions = {};
+        for (const [domain, sess] of Object.entries(captureState.sessions)) {
+            serializableSessions[domain] = {
+                ...sess,
+                // convert Set to array for storage
+                urlSet: Array.isArray(sess.urlSet) ? sess.urlSet : Array.from(sess.urlSet || [])
+            };
+        }
+        chrome.storage.local.set({
+            captureSessions: serializableSessions,
+            captureGlobal: {
+                isCapturing: captureState.isCapturing,
+                targetDomain: captureState.targetDomain
+            },
+            captureSettings: captureState.settings
+        });
+    } catch(e) {
+        console.error('Persist error', e);
+    }
+}
 
 // 窗口管理
 let captureWindow = null;
@@ -41,6 +185,36 @@ chrome.runtime.onInstalled.addListener(() => {
     loadSettings();
 });
 
+// Service worker startup restore
+loadPersistedState().then(() => {
+    if (captureState.isCapturing && captureState.targetDomain) {
+        ensureListenersActive();
+        console.log('[Restore] Active capturing restored for', captureState.targetDomain, 'requests:', captureState.capturedRequests.length);
+    }
+    // Ensure newly added default blocked domains merged even if settings already loaded earlier
+    const setBefore = new Set(captureState.settings.blockedDomains || []);
+    let changed = false;
+    for (const d of DEFAULT_BLOCKED_DOMAINS) { if (!setBefore.has(d)) { setBefore.add(d); changed = true; } }
+    if (changed) {
+        captureState.settings.blockedDomains = Array.from(setBefore);
+        saveSettings();
+        pruneBlockedFromCurrentSession();
+        console.log('[Merge] Added new default blocked domains. Total now:', captureState.settings.blockedDomains.length);
+    }
+    // Second pass merge to ensure newly appended domains (if patch updated constant during active session)
+    const setCheck = new Set(captureState.settings.blockedDomains || []);
+    let changed2 = false;
+    for (const d2 of DEFAULT_BLOCKED_DOMAINS) { if (!setCheck.has(d2)) { setCheck.add(d2); changed2 = true; } }
+    if (changed2) {
+        captureState.settings.blockedDomains = Array.from(setCheck);
+        saveSettings();
+        pruneBlockedFromCurrentSession();
+        console.log('[Merge] Second-pass merge applied. Total now:', captureState.settings.blockedDomains.length);
+    }
+    // Final prune to ensure newly added fout.jp removal
+    pruneBlockedFromCurrentSession();
+});
+
 // 消息处理器
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     try {
@@ -52,14 +226,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 handleStopCapture(sendResponse);
                 break;
             case 'get_captured_data':
-                sendResponse({ 
-                    requests: captureState.capturedRequests,
-                    total: captureState.requestCounter,
-                    isCapturing: captureState.isCapturing
-                });
+                {
+                    let requests = captureState.capturedRequests;
+                    if (captureState.targetDomain && captureState.sessions[captureState.targetDomain]) {
+                        requests = captureState.sessions[captureState.targetDomain].requests || [];
+                    }
+                    sendResponse({ 
+                        requests,
+                        total: captureState.requestCounter,
+                        isCapturing: captureState.isCapturing,
+                        targetDomain: captureState.targetDomain
+                    });
+                }
                 break;
             case 'clear_requests':
                 handleClearRequests(sendResponse);
+                break;
+            case 'reset_session':
+                handleResetSession(sendResponse);
                 break;
             case 'update_settings':
                 handleUpdateSettings(request.settings, sendResponse);
@@ -134,11 +318,36 @@ async function handleStartCapture(request, sendResponse) {
             throw new Error('Permission denied for this domain');
         }
 
-        // 重置状态
-        captureState.capturedRequests = [];
-        captureState.requestCounter = 0;
+        const newDomain = targetUrl.hostname;
+        const switchingDomain = captureState.targetDomain && captureState.targetDomain !== newDomain;
+
         captureState.isCapturing = true;
-        captureState.targetDomain = targetUrl.hostname;
+        captureState.targetDomain = newDomain;
+
+        // Initialize session if new domain
+        if (!captureState.sessions[newDomain]) {
+            captureState.sessions[newDomain] = {
+                requests: [],
+                urlSet: new Set(),
+                requestCounter: 0,
+                lastUpdated: Date.now()
+            };
+        } else {
+            // revive urlSet if persisted as array
+            if (Array.isArray(captureState.sessions[newDomain].urlSet)) {
+                captureState.sessions[newDomain].urlSet = new Set(captureState.sessions[newDomain].urlSet);
+            }
+        }
+
+        if (switchingDomain) {
+            // when switching domain we keep previous in sessions intact; reset in-memory mirror to new domain session
+            console.log('[Start] Switching from', captureState.targetDomain, 'to', newDomain);
+        }
+
+        // Mirror current domain session into top-level convenience fields
+        captureState.capturedRequests = captureState.sessions[newDomain].requests;
+        captureState.requestCounter = captureState.sessions[newDomain].requestCounter;
+        schedulePersist();
 
         // 添加请求监听器 - 根据模式监听不同范围的请求
         chrome.webRequest.onBeforeRequest.addListener(
@@ -181,6 +390,7 @@ function handleStopCapture(sendResponse) {
         // 恢复默认图标
         chrome.action.setIcon({ path: "default_icon48.png" });
         
+        schedulePersist();
         sendResponse({ 
             success: true, 
             totalCaptured: captureState.requestCounter 
@@ -194,8 +404,35 @@ function handleStopCapture(sendResponse) {
 
 // 清空请求数据
 function handleClearRequests(sendResponse) {
+    if (captureState.targetDomain && captureState.sessions[captureState.targetDomain]) {
+        captureState.sessions[captureState.targetDomain].requests = [];
+        captureState.sessions[captureState.targetDomain].urlSet = new Set();
+        captureState.sessions[captureState.targetDomain].requestCounter = 0;
+        captureState.sessions[captureState.targetDomain].lastUpdated = Date.now();
+        captureState.capturedRequests = [];
+        captureState.requestCounter = 0;
+        schedulePersist();
+    }
+    sendResponse({ success: true });
+}
+
+function handleResetSession(sendResponse) {
+    if (!captureState.targetDomain) {
+        sendResponse({ success: false, error: 'No active domain' });
+        return;
+    }
+    if (!captureState.sessions[captureState.targetDomain]) {
+        captureState.sessions[captureState.targetDomain] = { requests: [], urlSet: new Set(), requestCounter:0, lastUpdated: Date.now() };
+    } else {
+        captureState.sessions[captureState.targetDomain].requests = [];
+        captureState.sessions[captureState.targetDomain].urlSet = new Set();
+        captureState.sessions[captureState.targetDomain].requestCounter = 0;
+        captureState.sessions[captureState.targetDomain].lastUpdated = Date.now();
+    }
     captureState.capturedRequests = [];
     captureState.requestCounter = 0;
+    schedulePersist();
+    notifyPopupUpdate();
     sendResponse({ success: true });
 }
 
@@ -204,6 +441,8 @@ function handleUpdateSettings(newSettings, sendResponse) {
     try {
         captureState.settings = { ...captureState.settings, ...newSettings };
         saveSettings();
+        // prune existing data against updated block list
+        pruneBlockedFromCurrentSession();
         sendResponse({ success: true });
     } catch (error) {
         sendResponse({ success: false, error: error.message });
@@ -337,6 +576,9 @@ function handleWebResponse(details) {
 
 // 检查是否应该捕获请求
 function shouldCaptureRequest(domain, type) {
+    // Block internal extension resources
+    if (!domain && type === 'other') return false;
+    if (domain && domain.startsWith('chrome-extension')) return false;
     // 新增：支持多种捕获模式
     const captureMode = captureState.settings.captureMode || 'main_domain_only';
     
@@ -388,9 +630,14 @@ function shouldCaptureRequest(domain, type) {
         return false;
     }
 
-    // 检查自定义屏蔽域名
-    if (captureState.settings.blockedDomains.some(blocked => domain.includes(blocked))) {
-        console.log(`🚫 Blocked domain request: ${domain} (matches blacklist)`);
+    // 检查自定义屏蔽域名（精细：支持完整匹配和后缀匹配）
+    const blockedList = captureState.settings.blockedDomains || [];
+    const lowerDomain = domain.toLowerCase();
+    if (blockedList.some(b => lowerDomain === b || lowerDomain.endsWith('.' + b) || lowerDomain.includes(b))) {
+        // 针对 google.com 及其子域强制阻断
+        if (/\.google\.com$/.test(lowerDomain) || lowerDomain === 'google.com' || lowerDomain.endsWith('.google.com')) {
+            return false;
+        }
         return false;
     }
 
@@ -404,21 +651,33 @@ function isAdDomain(domain) {
 
 // 添加请求到捕获列表
 function addRequestToCapture(requestRecord) {
-    // 检查重复URL
-    const existingIndex = captureState.capturedRequests.findIndex(
-        req => req.url === requestRecord.url
-    );
+    if (!captureState.targetDomain) return;
+    const domain = captureState.targetDomain;
+    const session = captureState.sessions[domain];
+    if (!session) return;
 
-    if (existingIndex === -1) {
-        // 新请求，添加到列表
-        captureState.capturedRequests.push(requestRecord);
-        captureState.requestCounter++;
+    // Ensure urlSet is Set
+    if (Array.isArray(session.urlSet)) session.urlSet = new Set(session.urlSet);
 
-        // 执行FIFO策略，保持最大数量限制
-        if (captureState.capturedRequests.length > captureState.settings.maxRequests) {
-            captureState.capturedRequests.shift(); // 移除最旧的请求
+    if (session.urlSet.has(requestRecord.url)) return; // dedupe
+
+    session.requests.push(requestRecord);
+    session.urlSet.add(requestRecord.url);
+    session.requestCounter++;
+    session.lastUpdated = Date.now();
+
+    // enforce maxRequests FIFO
+    if (session.requests.length > captureState.settings.maxRequests) {
+        const removed = session.requests.shift();
+        if (removed && session.urlSet) {
+            session.urlSet.delete(removed.url);
         }
     }
+
+    // mirror
+    captureState.capturedRequests = session.requests;
+    captureState.requestCounter = session.requestCounter;
+    schedulePersist();
 }
 
 // 通知popup更新数据
@@ -443,9 +702,45 @@ function notifyPopupUpdate() {
 function loadSettings() {
     chrome.storage.local.get(['captureSettings'], (result) => {
         if (result.captureSettings) {
+            // merge persisted settings
             captureState.settings = { ...captureState.settings, ...result.captureSettings };
+            // ensure new default blocked domains are appended (migration-safe)
+            const beforeSet = new Set(captureState.settings.blockedDomains || []);
+            let changed = false;
+            for (const d of DEFAULT_BLOCKED_DOMAINS) {
+                if (!beforeSet.has(d)) { beforeSet.add(d); changed = true; }
+            }
+            if (changed) {
+                captureState.settings.blockedDomains = Array.from(beforeSet);
+                saveSettings();
+            }
+            pruneBlockedFromCurrentSession();
         }
     });
+}
+
+function pruneBlockedFromCurrentSession() {
+    try {
+        if (!captureState.targetDomain) return;
+        const blocked = captureState.settings.blockedDomains || [];
+        const session = captureState.sessions[captureState.targetDomain];
+        if (!session) return;
+        if (Array.isArray(session.urlSet)) session.urlSet = new Set(session.urlSet);
+        const before = session.requests.length;
+        session.requests = session.requests.filter(r => !blocked.some(b => r.domain && r.domain.includes(b)));
+        // rebuild urlSet
+        session.urlSet = new Set(session.requests.map(r => r.url));
+        session.requestCounter = session.requests.length; // keep counter aligned for now
+        captureState.capturedRequests = session.requests;
+        captureState.requestCounter = session.requestCounter;
+        if (before !== session.requests.length) {
+            schedulePersist();
+            notifyPopupUpdate();
+            console.log('[Prune] Removed', before - session.requests.length, 'blocked requests');
+        }
+    } catch(e) {
+        console.warn('Prune failed', e);
+    }
 }
 
 // 保存设置
@@ -546,9 +841,52 @@ function handleOpenWindow(sendResponse) {
 chrome.windows.onRemoved.addListener((windowId) => {
     if (captureWindow && captureWindow.id === windowId) {
         captureWindow = null;
-        // 如果正在捕获，则停止捕获
-        if (captureState.isCapturing) {
-            handleStopCapture(() => {});
-        }
+        // Do NOT auto-stop capturing; persist current state
+        schedulePersist();
     }
 });
+
+// Ensure listeners active after navigation events (resume logic)
+chrome.webNavigation.onCommitted.addListener(details => {
+    if (!captureState.isCapturing) return;
+    if (!captureState.targetDomain) return;
+    try {
+        const url = new URL(details.url);
+        const domain = url.hostname;
+        const mode = captureState.settings.captureMode;
+        let domainMatch = false;
+        switch(mode) {
+            case 'main_domain_only':
+                domainMatch = domain === captureState.targetDomain; break;
+            case 'include_subdomains':
+                domainMatch = domain === captureState.targetDomain || domain.endsWith('.'+captureState.targetDomain); break;
+            case 'all_domains':
+                domainMatch = true; break;
+            case 'whitelist':
+                const allowed = captureState.settings.allowedDomains || [captureState.targetDomain];
+                domainMatch = allowed.some(d => domain === d || domain.endsWith('.'+d));
+                break;
+            default:
+                domainMatch = domain === captureState.targetDomain;
+        }
+        if (domainMatch) {
+            ensureListenersActive();
+        }
+    } catch(e) {}
+});
+
+function ensureListenersActive() {
+    const needBefore = !chrome.webRequest.onBeforeRequest.hasListener(handleWebRequest);
+    const needCompleted = !chrome.webRequest.onCompleted.hasListener(handleWebResponse);
+    if (!(needBefore || needCompleted)) return;
+    if (!captureState.isCapturing) return;
+    // rebuild urls filter similar to start (simplified: all_urls; filtering handled in shouldCaptureRequest)
+    const urls = ["<all_urls>"];
+    if (needBefore) {
+        chrome.webRequest.onBeforeRequest.addListener(handleWebRequest, { urls }, ["requestBody"]);
+    }
+    if (needCompleted) {
+        chrome.webRequest.onCompleted.addListener(handleWebResponse, { urls }, ["responseHeaders"]);
+    }
+    console.log('[Ensure] webRequest listeners active. before:', needBefore, 'completed:', needCompleted);
+}

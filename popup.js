@@ -67,6 +67,10 @@ class WebRequestCaptureApp {    constructor() {
         
         // 数据操作按钮
         document.getElementById('clearButton').addEventListener('click', () => this.clearData());
+        const resetBtn = document.getElementById('resetSessionButton');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => this.resetSession());
+        }
         document.getElementById('exportButton').addEventListener('click', () => this.exportData());
         document.getElementById('exportResourcesButton').addEventListener('click', () => this.exportResources());
         
@@ -400,6 +404,12 @@ class WebRequestCaptureApp {    constructor() {
      */
     handleDataUpdate(data) {
         this.currentData = data.requests || [];
+        if (typeof data.isCapturing === 'boolean') this.isCapturing = data.isCapturing;
+        if (data.targetDomain) {
+            const td = document.getElementById('targetDomain');
+            if (td) td.textContent = data.targetDomain;
+        }
+        this.updateCaptureState();
         this.applyFilters();
         this.updateTable();
         this.updateStats();
@@ -701,17 +711,15 @@ class WebRequestCaptureApp {    constructor() {
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
 
-        if (this.isCapturing) {
-            statusDot.className = 'status-dot capturing';
-            statusText.textContent = 'Capturing...';
-            startButton.disabled = true;
-            stopButton.disabled = false;
-        } else {
-            statusDot.className = 'status-dot';
-            statusText.textContent = 'Stopped';
-            startButton.disabled = false;
-            stopButton.disabled = true;
-        }
+        const capturing = this.isCapturing;
+        const dotClass = capturing ? 'status-dot capturing' : 'status-dot stopped';
+        const text = capturing ? 'Capturing...' : 'Stopped';
+
+    if (statusDot) statusDot.className = dotClass;
+    if (statusText) statusText.textContent = text;
+
+        if (startButton) startButton.disabled = capturing;
+        if (stopButton) stopButton.disabled = !capturing;
     }    /**
      * 清空数据
      */
@@ -1748,7 +1756,11 @@ class WebRequestCaptureApp {    constructor() {
         chrome.runtime.sendMessage({ message: 'get_captured_data' }, (response) => {
             if (response) {
                 this.currentData = response.requests || [];
-                this.isCapturing = response.isCapturing || false;
+                this.isCapturing = !!response.isCapturing;
+                if (response.targetDomain) {
+                    const td = document.getElementById('targetDomain');
+                    if (td) td.textContent = response.targetDomain;
+                }
                 this.applyFilters();
                 this.updateTable();
                 this.updateStats();
@@ -1756,6 +1768,23 @@ class WebRequestCaptureApp {    constructor() {
             }
         });
     }    /**
+     * 重置当前会话
+     */
+    resetSession() {
+        if (!confirm('Reset current session? This will clear captured requests for the active domain.')) return;
+        chrome.runtime.sendMessage({ message: 'reset_session' }, (response) => {
+            if (response && response.success) {
+                this.currentData = [];
+                this.filteredData = [];
+                this.updateTable();
+                this.updateStats();
+                this.showSuccess('Session reset');
+            } else {
+                this.showError('Failed to reset session');
+            }
+        });
+    }
+    /**
      * 显示错误消息
      */
     showError(message) {
